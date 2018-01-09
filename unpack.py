@@ -41,20 +41,24 @@ def as_array(name):
     return a
 
 def download(url):
-    #if not os.path.isfile(name + '.hgt'):
     print("Downloading", url)
     r = requests.get(url)
     z = zipfile.ZipFile(io.BytesIO(r.content))
     z.extractall()
 
 def normalise(a):
-    width = hisize/a.shape[1]
-    height = hisize/a.shape[0]
-    #a[a==0] = -10 # make sea below sea-level
     a = a + sealevel
     a = a * height_scale
+    width = hisize/a.shape[1]
+    height = hisize/a.shape[0]
+    #width_fraction = pow(width, 1/10)
+    #height_fraction = pow(height, 1/10)
+    #for i in range(9):
+    #    a = scipy.ndimage.zoom(a, [height_fraction, width_fraction])
+    width = hisize/a.shape[1]
+    height = hisize/a.shape[0]
     a = scipy.ndimage.zoom(a, [height, width])
-    #a = scipy.ndimage.filters.gaussian_filter(a, 1)
+    a = scipy.ndimage.filters.gaussian_filter(a, 2)
     a = np.clip(a, 0, 65535)
     return a
     	   
