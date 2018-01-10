@@ -1,3 +1,5 @@
+![Isle of Scalpay](screenshot.jpg)
+
 # Cities: Skylines heightmap generator
 
 A Python script to download and convert real-world elevation data for use in the Cities: Skylines map editor.
