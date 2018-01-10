@@ -13,7 +13,7 @@ import math
 from collections import namedtuple
 import shapefile
 from rasterio.features import rasterize
-from rasterio.transform import Affine
+from affine import Affine
 
 imsize = 1201
 hisize = 1081
@@ -25,6 +25,9 @@ land_url = "https://dds.cr.usgs.gov/srtm/version2_1/SRTM3/Eurasia/%s%s.hgt.zip"
 
 BBox = namedtuple('BBox', ['top', 'bottom', 'left', 'right'])
 Paths = namedtuple('Paths', ['land_url', 'land_name', 'water_url', 'water_name'])
+
+def transformation(lat, lon):
+    return Affine.translation(lon, lat) * Affine.scale(1/1200., -1/1200.)
 
 def as_array(name):
     filename = name + ".hgt"
@@ -51,12 +54,6 @@ def normalise(a):
     a = a * height_scale
     width = hisize/a.shape[1]
     height = hisize/a.shape[0]
-    #width_fraction = pow(width, 1/10)
-    #height_fraction = pow(height, 1/10)
-    #for i in range(9):
-    #    a = scipy.ndimage.zoom(a, [height_fraction, width_fraction])
-    width = hisize/a.shape[1]
-    height = hisize/a.shape[0]
     a = scipy.ndimage.zoom(a, [height, width])
     a = scipy.ndimage.filters.gaussian_filter(a, 2)
     a = np.clip(a, 0, 65535)
@@ -75,13 +72,13 @@ def lookup(lat, lon):
     if lat > 0:
         strlat = "N%02d" % math.floor(lat)
     else:
-        strlat = "S%02d" % math.floor(-lat)
+        strlat = "S%02d" % -math.floor(lat)
 
     if lon > 0:
         strlon = "E%03d" % math.floor(lon)
         wurl = water_url % ('east', strlon.lower(), strlat.lower())
     else:
-        strlon = "W%03d" % math.floor(-lon)
+        strlon = "W%03d" % -math.floor(lon)
         wurl = water_url % ('west', strlon.lower(), strlat.lower())
 
     water_name = "%s%se" % (strlon.lower(), strlat.lower())
@@ -93,41 +90,72 @@ def lookup(lat, lon):
 def bounds(lat, lon, km=18):
     """A Cities: Skylines map is 18km
     one arc second is rougly 30m at the equator
-    one SRTM cell is 3 arc second
-    one cell is 90m
-    200 cells is 18 km"""
-    height = 100/18*km # from center
+    there are 3600 arc seconds to a degree
+    so 108000 meter in a degree
+    so 0.1666 degree in 18km"""
+    height = km*1000/(30*60*60)
     width = height/math.cos(math.radians(lat))
-    x = (lon % 1) * 1200
-    y = (1 - lat % 1) * 1200
-    return BBox(y - height, y + height,
-            x - width, x + width)
-
+    return BBox(lat + height/2, lat - height/2,
+                lon - width/2, lon + width/2)
 
 def adjust_water(lat, lon, tile, shp, seabed):
     sf = shapefile.Reader(shp)
-    a = Affine.translation(lon, lat) * Affine.scale(1/1200., -1/1200.)
+    a = transformation(lat, lon)
 
     image = rasterize(sf.shapes(), out=tile, default_value=seabed, transform=a)
     return image
 
+def get_bounds(bbox):
+    tiles = {}
+    for lat in [bbox.top, bbox.bottom]:
+        for lon in [bbox.left, bbox.right]:
+            paths = lookup(lat, lon)
+            tiles[(math.floor(lat), math.floor(lon))] = paths
+    
+    data = {}
+    for coord, paths in tiles.items():
+        if not os.path.isfile(paths.land_name + '.hgt'):
+            download(paths.land_url)
+
+        if not os.path.isfile(paths.water_name + '.shp'):
+            download(paths.water_url)
+
+        a = as_array(paths.land_name)
+        adjust_water(math.ceil(lat), math.floor(lon), a, paths.water_name, -20)
+        data[coord] = a
+
+    coords = sorted(data.keys())
+    if len(coords) == 1:
+        a = data[coords[0]]
+    elif len(coords) == 2:
+        c1, c2 = coords
+        axis = 1 if c1[0] == c2[0] else 0
+        a = np.concatenate([data[c1], data[c2]], axis=axis)
+    else:
+        c1, c2, c3, c4 = coords
+        b = np.concatenate([data[c1], data[c2]], axis=1)
+        c = np.concatenate([data[c3], data[c4]], axis=1)
+        a = np.concatenate([c, b], axis=0)
+
+    #coord is bottom-left position
+    maxlat = max([c[0] for c in coords])
+    minlon = min([c[1] for c in coords])
+    root = (maxlat+1, minlon)
+    aff = transformation(*root)
+    top_left = ~aff*(bbox.left, bbox.top)
+    bottom_right = ~aff*(bbox.right, bbox.bottom)
+    print(top_left, bottom_right)
+    a = a[int(top_left[1]):int(bottom_right[1]), int(top_left[0]):int(bottom_right[0])]
+    return a
+
 if __name__ == "__main__":
-    lat, lon = [float(l) for l in sys.argv[1:]]
+    lat, lon = [float(l) for l in sys.argv[2:]]
     bbox = bounds(lat, lon)
     print(bbox)
-    paths = lookup(lat, lon)
-    if not os.path.isfile(paths.land_name + '.hgt'):
-        download(paths.land_url)
-
-    if not os.path.isfile(paths.water_name + '.shp'):
-        download(paths.water_url)
-
-    a = as_array(paths.land_name)
-    adjust_water(math.ceil(lat), math.floor(lon), a, paths.water_name, -20)
-    a = a[int(bbox.top):int(bbox.bottom), int(bbox.left):int(bbox.right)]
+    a = get_bounds(bbox)
     a = normalise(a)
 
     im = plt.imshow(a, cmap='gray')
     #im.axes.add_patch(patches.Rectangle([bbox.left, bbox.top], 200, 200, fill=False))
     plt.show()
-    write_png(paths.land_name, a)
+    write_png(sys.argv[1], a)
