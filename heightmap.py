@@ -121,7 +121,7 @@ def get_bounds(bbox):
             download(paths.water_url)
 
         a = as_array(paths.land_name)
-        adjust_water(math.ceil(lat), math.floor(lon), a, paths.water_name, -20)
+        adjust_water(coord[0]+1, coord[1], a, paths.water_name, -20)
         data[coord] = a
 
     coords = sorted(data.keys())
@@ -129,8 +129,10 @@ def get_bounds(bbox):
         a = data[coords[0]]
     elif len(coords) == 2:
         c1, c2 = coords
-        axis = 1 if c1[0] == c2[0] else 0
-        a = np.concatenate([data[c1], data[c2]], axis=axis)
+        if c1[0] == c2[0]:
+            a = np.concatenate([data[c1], data[c2]], axis=1)
+        else:
+            a = np.concatenate([data[c2], data[c1]], axis=0)
     else:
         c1, c2, c3, c4 = coords
         b = np.concatenate([data[c1], data[c2]], axis=1)
