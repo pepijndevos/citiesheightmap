@@ -20,7 +20,7 @@ conda install rasterio
 ## Usage
 
 ```
-python unpack.py name lat lon
+python heightmap.py name lat lon
 ```
 
 Some parameters can be tweaked in the code for now.
