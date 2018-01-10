@@ -34,6 +34,7 @@ def as_array(name):
 
     a = np.zeros([imsize, imsize])#, np.int16)
 
+    void_fill = 0;
     with open(filename, "rb") as f:
         for x in range(imsize):
             for y in range(imsize):
@@ -41,6 +42,9 @@ def as_array(name):
                 val = struct.unpack('>h', buf)  # ">h" is a signed two byte integer
                 if val[0] != -32768:
                     a[x,y] = val[0]
+                    void_fill = val[0]
+                else:
+                    a[x,y] = void_fill
     return a
 
 def download(url):
