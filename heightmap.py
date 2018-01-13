@@ -4,9 +4,12 @@ import scipy.ndimage
 import scipy.ndimage.filters
 import requests
 import zipfile
+import gzip
+import shutil
 import io
 import sys
 import os
+import os.path
 import matplotlib.pyplot as plt
 import png
 import math
@@ -15,19 +18,19 @@ import shapefile
 from rasterio.features import rasterize
 from affine import Affine
 
-imsize = 1201
+imsize = 3601
 hisize = 1081
 sealevel = 40
 height_scale = 64
 
 water_url = "https://dds.cr.usgs.gov/srtm/version2_1/SWBD/SWBD%s/%s%se.zip"
-land_url = "https://dds.cr.usgs.gov/srtm/version2_1/SRTM3/Eurasia/%s%s.hgt.zip"
+land_url = "https://s3.amazonaws.com/elevation-tiles-prod/skadi/{y}/{y}{x}.hgt.gz"
 
 BBox = namedtuple('BBox', ['top', 'bottom', 'left', 'right'])
 Paths = namedtuple('Paths', ['land_url', 'land_name', 'water_url', 'water_name'])
 
 def transformation(lat, lon):
-    return Affine.translation(lon, lat) * Affine.scale(1/1200., -1/1200.)
+    return Affine.translation(lon, lat) * Affine.scale(1/imsize, -1/imsize)
 
 def as_array(name):
     filename = name + ".hgt"
@@ -47,11 +50,19 @@ def as_array(name):
                     a[x,y] = void_fill
     return a
 
-def download(url):
+def download_zip(url):
     print("Downloading", url)
     r = requests.get(url)
     z = zipfile.ZipFile(io.BytesIO(r.content))
     z.extractall()
+
+def download_gzip(url):
+    print("Downloading", url)
+    r = requests.get(url)
+    fname = os.path.split(url)[1]
+    ufname = os.path.splitext(fname)[0]
+    with gzip.open(io.BytesIO(r.content), 'rb') as f_in, open(ufname, 'wb') as f_out:
+        shutil.copyfileobj(f_in, f_out)
 
 def normalise(a):
     a = a + sealevel
@@ -86,7 +97,7 @@ def lookup(lat, lon):
         wurl = water_url % ('west', strlon.lower(), strlat.lower())
 
     water_name = "%s%se" % (strlon.lower(), strlat.lower())
-    lurl = land_url % (strlat, strlon)
+    lurl = land_url.format(y=strlat, x=strlon)
     land_name = "%s%s" % (strlat, strlon)
 
     return Paths(lurl, land_name, wurl, water_name)
@@ -119,10 +130,10 @@ def get_bounds(bbox):
     data = {}
     for coord, paths in tiles.items():
         if not os.path.isfile(paths.land_name + '.hgt'):
-            download(paths.land_url)
+            download_gzip(paths.land_url)
 
         if not os.path.isfile(paths.water_name + '.shp'):
-            download(paths.water_url)
+            download_zip(paths.water_url)
 
         a = as_array(paths.land_name)
         adjust_water(coord[0]+1, coord[1], a, paths.water_name, -20)
