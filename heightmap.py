@@ -10,6 +10,7 @@ import io
 import sys
 import os
 import os.path
+import argparse
 import matplotlib.pyplot as plt
 import png
 import math
@@ -20,8 +21,6 @@ from affine import Affine
 
 imsize = 3601
 hisize = 1081
-sealevel = 40
-height_scale = 64
 
 water_url = "https://dds.cr.usgs.gov/srtm/version2_1/SWBD/SWBD%s/%s%se.zip"
 land_url = "https://s3.amazonaws.com/elevation-tiles-prod/skadi/{y}/{y}{x}.hgt.gz"
@@ -64,13 +63,14 @@ def download_gzip(url):
     with gzip.open(io.BytesIO(r.content), 'rb') as f_in, open(ufname, 'wb') as f_out:
         shutil.copyfileobj(f_in, f_out)
 
-def normalise(a):
+def normalise(a, sealevel, height_scale, blur):
     a = a + sealevel
     a = a * height_scale
     width = hisize/a.shape[1]
     height = hisize/a.shape[0]
     a = scipy.ndimage.zoom(a, [height, width])
-    a = scipy.ndimage.filters.gaussian_filter(a, 2)
+    if blur:
+        a = scipy.ndimage.filters.gaussian_filter(a, blur)
     a = np.clip(a, 0, 65535)
     return a
     	   
@@ -120,7 +120,7 @@ def adjust_water(lat, lon, tile, shp, seabed):
     image = rasterize(sf.shapes(), out=tile, default_value=seabed, transform=a)
     return image
 
-def get_bounds(bbox):
+def get_bounds(bbox, fix_water):
     tiles = {}
     for lat in [bbox.top, bbox.bottom]:
         for lon in [bbox.left, bbox.right]:
@@ -136,7 +136,8 @@ def get_bounds(bbox):
             download_zip(paths.water_url)
 
         a = as_array(paths.land_name)
-        adjust_water(coord[0]+1, coord[1], a, paths.water_name, -20)
+        if fix_water:
+            adjust_water(coord[0]+1, coord[1], a, paths.water_name, -20)
         data[coord] = a
 
     coords = sorted(data.keys())
@@ -165,14 +166,36 @@ def get_bounds(bbox):
     a = a[int(top_left[1]):int(bottom_right[1]), int(top_left[0]):int(bottom_right[0])]
     return a
 
+parser = argparse.ArgumentParser(
+        description='Generate a height map',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument('name',
+        help="The name of the location")
+parser.add_argument('lat', type=float, help="Latitude")
+parser.add_argument('lon', type=float, help="Longitude")
+parser.add_argument('--span', type=float, default=18,
+        help="The size of the map in kilometer")
+parser.add_argument('--height-scale', type=float, default=64,
+        help="Real height to game height.")
+parser.add_argument('--blur', type=float, default=2,
+        help="Blur radius to smooth terrain")
+parser.add_argument('--sealevel', type=float, default=40,
+        help="The reference height for the map.")
+parser.add_argument('--seabed', type=float, default=-10,
+        help="The relative altitude of the bottom of the sea")
+parser.add_argument('--fix_water', dest='water', action='store_true',
+        help="Replace water areas with the seabed value")
+parser.add_argument('--no-fix-water', dest='water', action='store_false')
+parser.set_defaults(water=True)
+
 if __name__ == "__main__":
-    lat, lon = [float(l) for l in sys.argv[2:]]
-    bbox = bounds(lat, lon)
+    args = parser.parse_args()
+    print(args)
+    bbox = bounds(args.lat, args.lon, args.span)
     print(bbox)
-    a = get_bounds(bbox)
-    a = normalise(a)
+    a = get_bounds(bbox, args.water)
+    a = normalise(a, args.sealevel, args.height_scale, args.blur)
 
     im = plt.imshow(a, cmap='gray')
-    #im.axes.add_patch(patches.Rectangle([bbox.left, bbox.top], 200, 200, fill=False))
     plt.show()
     write_png(sys.argv[1], a)
