@@ -22,7 +22,29 @@ conda install rasterio
 ## Usage
 
 ```
-python heightmap.py name lat lon
-```
+usage: heightmap.py [-h] [--span SPAN] [--height-scale HEIGHT_SCALE]
+                    [--blur BLUR] [--sealevel SEALEVEL] [--seabed SEABED]
+                    [--fix_water] [--no-fix-water]
+                    name lat lon
 
-Some parameters can be tweaked in the code for now.
+Generate a height map
+
+positional arguments:
+  name                  The name of the location
+  lat                   Latitude
+  lon                   Longitude
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --span SPAN           The size of the map in kilometer (default: 18)
+  --height-scale HEIGHT_SCALE
+                        Real height to game height. (default: 64)
+  --blur BLUR           Blur radius to smooth terrain (default: 2)
+  --sealevel SEALEVEL   The reference height for the map. (default: 40)
+  --seabed SEABED       The relative altitude of the bottom of the sea
+                        (default: -10)
+  --fix_water           Replace water areas with the seabed value (default:
+                        True)
+  --no-fix-water
+
+```
